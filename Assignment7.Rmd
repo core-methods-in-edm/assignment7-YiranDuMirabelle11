@@ -1,6 +1,6 @@
 ---
 title: "Assignment 7 - Answers"
-author: "Charles Lang"
+author: "Charles Lang + Yiran Du"
 date: "11/30/2016"
 output: html_document
 ---
@@ -9,23 +9,43 @@ In the following assignment you will be looking at data from an one level of an 
 
 #Upload data
 ```{r}
-
+D1 <- read.csv("~/Desktop/github/assignment7-YiranDuMirabelle11/online.data.csv")
 ```
 
 #Visualization 
 ```{r}
 #Start by creating histograms of the distributions for all variables (#HINT: look up "facet" in the ggplot documentation)
-
+library("ggplot2")
+library("reshape2")
+library(corrplot)
+D1 <- D1[-1]
+D1$level.up <- ifelse(D1$level.up == "yes",1,0)
+head(melt(D1))
+ggplot(data = melt(D1), mapping = aes(x=value)) + geom_histogram(bins = 10) + facet_wrap(~variable, scales = 'free_x')
 #Then visualize the relationships between variables
-
-#Try to capture an intution about the data and the relationships
-
+pairs(D1)
+D1COR <- cor(D1)
+corrplot(D1COR, method="circle", type="upper",        
+tl.col="black", tl.cex=0.6, tl.srt=45, 
+        addCoef.col="black", addCoefasPercent = TRUE,
+        sig.level=0.50, insig = "blank")
 ```
+#### Try to capture an intution about the data and the relationships:
+We found in the visualization that all pairs in our variables are positively correlated. Some of the variables are strongly correlated, e.g. the number of messages and their post-test score. Therefore, it seems that the relationship among this dataset is strong.
+
+
+
 #Classification tree
 ```{r}
 #Create a classification tree that predicts whether a student "levels up" in the online course using three variables of your choice (As we did last time, set all controls to their minimums)
+library("rpart")
+
+## Since in the graph above, we find that the first three variables strongly correlated with level up is post-test score, messages and average assignment score, we will adopt these three in our first model
+rp <- rpart(level.up ~ post.test.score + av.assignment.score + messages, method="class",control = rpart.control(minsplit = 1,minbucket= 1, cp=0), data=D1)
+printcp(rp)
 
 #Plot and generate a CP table for your tree 
+post(rp, file="tree1.ps", title = "Tentative Classification of Level Up over post-test-score, average assignment grade and messages")
 
 #Generate a probability value that represents the probability that a student levels up based your classification tree 
 
@@ -41,24 +61,52 @@ plot(performance(pred.detail, "tpr", "fpr"))
 abline(0, 1, lty = 2)
 
 #Calculate the Area Under the Curve
-unlist(slot(performance(Pred2,"auc"), "y.values"))#Unlist liberates the AUC value from the "performance" object created by ROCR
+unlist(slot(performance(pred.detail,"auc"), "y.values"))#Unlist liberates the AUC value from the "performance" object created by ROCR
+
+
 
 #Now repeat this process, but using the variables you did not use for the previous model and compare the plots & results of your two models. Which one do you think was the better model? Why?
 
+# The model with the rest two variables plus messages:
+rp2 <- rpart(level.up ~ pre.test.score +forum.posts + messages, method="class",control = rpart.control(minsplit = 1,minbucket= 1, cp=0), data=D1)
+printcp(rp2)
+
+#Plot and generate a CP table for your tree 
+post(rp2, file="tree2.ps", title = "Tentative Classification of Level Up over pre-test-score, forum posts and messages")
+
+#Generate a probability value that represents the probability that a student levels up based your classification tree 
+
+D1$pred2 <- predict(rp2, type = "prob")[,2]
+
+#Now generate the ROC curve for the model.
+
+#Plot the curve
+pred2.detail <- prediction(D1$pred2, D1$level.up) 
+plot(performance(pred2.detail, "tpr", "fpr"))
+abline(0, 1, lty = 2)
+
+#Calculate the Area Under the Curve
+unlist(slot(performance(pred2.detail,"auc"), "y.values"))
+
+# The first one is better since it has a high AUC, which approaches 1.
 ```
 #Thresholds
 ```{r}
 #Look at the ROC plot for your first model. Based on this plot choose a probability threshold that balances capturing the most correct predictions against false positives. Then generate a new variable in your data set that classifies each student according to your chosen threshold.
-
-threshold.pred1 <- 
+diagn <- function(threshold) {
+  
+D1$threshold.pred1 <- D1$pred> threshold
 
 #Now generate three diagnostics:
 
-D1$accuracy.model1 <-
+D1$accuracy.model1 <- sum(D1$threshold.pred1)/nrow(D1)
 
-D1$precision.model1 <- 
+D1$false.positive <- D1$threshold.pred1 == TRUE & D1$level.up==0
+D1$truepostive <- D1$threshold.pred1 == TRUE & D1$level.up ==1
+D1$precision.model1 <- sum(D1$truepostive) / (sum(D1$truepostive) + sum(D1$false.positive))
 
-D1$recall.model1 <- 
+D1$flse.negative <- D1$threshold.pred1 == FALSE & D1$level.up==0
+D1$recall.model1 <- sum(D1$truepostive) / (sum(D1$truepostive) + sum(D1$false.negative))
 
 #Finally, calculate Kappa for your model according to:
 
@@ -69,9 +117,17 @@ table1 <- table(D1$level.up, D1$threshold.pred1)
 matrix1 <- as.matrix(table1)
 
 #Calculate kappa
-kappa(matrix1, exact = TRUE)/kappa(matrix1)
+predict.kappa <- kappa(matrix1, exact = TRUE)/kappa(matrix1)
 
+return(predict.kappa)
+}
+
+diagn(0.8)
 #Now choose a different threshold value and repeat these diagnostics. What conclusions can you draw about your two thresholds?
+# We set the threshold to 0.5
+diagn(0.5)
+
+# The kappa does not change because in our model(We set all the controls to its minimum and AUC = 1), the model is perfect to our dataset at hand, though with the problem of overfitting and the threshold will not change our kappa.  But if we loosen the control and re-calculate the kappa. We will find that kappa itself cannot determine whether a model is good or not since kappa will decrease with a higher threshold.
 
 ```
 
